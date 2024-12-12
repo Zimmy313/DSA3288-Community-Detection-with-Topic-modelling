@@ -1,6 +1,5 @@
 from graphviz import Digraph
 
-
 def visualize_tree_graphviz(node, vocab, graph=None, parent_id=None, node_id_counter=None, label_map=None):
     """
     Recursively traverse the tree and add nodes and edges to the Graphviz Digraph.
@@ -60,23 +59,51 @@ def print_tree_graphviz(root, vocab, filename='ncrp_tree', view=False):
     graph.render(filename, view=view, format='png')
     print(f"Tree visualization saved as {filename}.png")
     
-def get_top_words(node, vocab, top_n=5):
-    word_counts = list(node.word_counts.items())
-    word_counts.sort(key=lambda x: x[1], reverse=True)
-    top_words = [w for w, count in word_counts[:top_n]]
-    return top_words
+def visualize_document_path(tree, doc_id, vocab, filename='doc_path', view=False, top_n=5):
+    """
+    Visualize the path taken by a particular document through the hierarchical tree.
 
-def print_tree(node, vocab, level=0):
-    indent = "  " * level
-    print(f"{indent}Level {node.level}: docs={node.documents}, total_words={node.total_words}")
-    top_words = get_top_words(node, vocab, top_n=5)
-    print(f"{indent}  Top words: {top_words}")
-    for child_id, child_node in node.children.items():
-        print_tree(child_node, vocab, level+1)
+    Args:
+        tree (nCRPTree): The hierarchical LDA tree.
+        doc_id (int): ID of the document whose path we want to visualize.
+        vocab (list): The vocabulary list.
+        filename (str, optional): The output filename (without extension) for the graph. Defaults to 'doc_path'.
+        view (bool, optional): Whether to open the generated file after creation. Defaults to False.
+        top_n (int, optional): Number of top words to display per node. Defaults to 5.
 
-def print_document_assignments(tree, doc_id):
-    doc_words = tree.document_words[doc_id]
-    doc_levels = tree.levels[doc_id]
-    print(f"Document {doc_id}:")
-    for w, lvl in zip(doc_words, doc_levels):
-        print(f"  {w} -> level {lvl}")
+    Returns:
+        None: Saves a .png visualization of the document's path.
+    """
+    if doc_id not in tree.paths:
+        print(f"Document {doc_id} not found in the tree.")
+        return
+
+    path_nodes = tree.paths[doc_id]
+
+    # Create a new Graphviz graph
+    graph = Digraph(comment=f'Document {doc_id} Path')
+    graph.attr('node', shape='box', style='filled', color='lightblue')
+
+    # Function to get top words
+    def get_top_words(node, vocab, top_n):
+        word_counts = list(node.word_counts.items())
+        word_counts.sort(key=lambda x: x[1], reverse=True)
+        top_words = [w for w, count in word_counts[:top_n]]
+        return top_words
+
+    # Add nodes for each node in the path
+    node_ids = []
+    for i, node in enumerate(path_nodes):
+        tw = get_top_words(node, vocab, top_n)
+        label = f"Level {node.level}\nDocs: {node.documents}\nTop words: {', '.join(tw)}"
+        node_id = f"{doc_id}_{i}"
+        graph.node(node_id, label=label)
+        node_ids.append(node_id)
+
+    # Add edges to represent the path
+    for i in range(len(node_ids)-1):
+        graph.edge(node_ids[i], node_ids[i+1])
+
+    # Render the graph
+    graph.render(filename, view=view, format='png')
+    print(f"Document {doc_id} path visualization saved as {filename}.png")
