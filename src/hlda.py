@@ -1,3 +1,7 @@
+"""
+This module contain the implementation of the nested chinese restaruant process.
+"""
+
 import numpy as np
 from collections import defaultdict
 from math import log
@@ -71,6 +75,7 @@ class Node:
         else:
             raise KeyError(f"Topic ID {topic_id} not found among the children.")
         
+
 class nCRPTree:
     """
     Attributes:
@@ -103,15 +108,15 @@ class nCRPTree:
         self.root = Node()
         self.gamma = gamma
         self.eta = eta
+        self.m = m
+        self.pi = pi
         self.V = len(vocab)
         self.vocab = vocab
         self.eta_sum = self.eta * self.V
-        self.num_levels = num_levels
-        self.paths = {}
-        self.levels = {}               
+        self.num_levels = num_levels    ## Current max level
+        self.paths = {}                 ## {doc_id: nodes(reference to node)}
+        self.levels = {}                ## {doc_id: doc_levels(integer)} 
         self.document_words = {}        ## Pre-processed vacabulary for each of the document.
-        self.m = m
-        self.pi = pi
 
     @lru_cache(maxsize=None)
     def cached_gammaln(self, x):
@@ -242,9 +247,6 @@ class nCRPTree:
 
         Args:
             document_id (int): The unique identifier for the document being removed.
-
-        Raises:
-            KeyError: If the document ID does not exist in the tree.
         """
         if document_id not in self.paths:
             return
@@ -291,7 +293,7 @@ class nCRPTree:
             document_levels (list of int): The list of level assignments for each word.
 
         Returns:
-            dict: A mapping from level indices to dictionaries of word counts.
+            dictionary of dictionary: E.g. {level 1: {word1: count1, word2: count2,...},...}
         """
         level_word_counts = {}
         for w, lvl in zip(document_words, document_levels):
@@ -569,19 +571,13 @@ class nCRPTree:
         for n in range(len(doc_words)):
             self.sample_level_assignment_for_word(document_id, n)
 
-    def gibbs_sampling(self, corpus, num_iterations, burn_in=100, thinning=10):
+    def gibbs_sampling(self, corpus, num_iterations):
         """
         Performs Gibbs sampling to infer topic assignments and update the nCRP tree.
-
-        The method iteratively samples path assignments and word level assignments for each document
-        in the corpus, updating the tree structure accordingly. It also handles burn-in and thinning
-        periods to ensure proper convergence.
 
         Args:
             corpus (list of list of str): The preprocessed corpus where each document is a list of words.
             num_iterations (int): Total number of Gibbs sampling iterations to perform.
-            burn_in (int, optional): Number of initial iterations to discard as burn-in. Defaults to 100.
-            thinning (int, optional): Interval for collecting samples (i.e., collect a sample every 'thinning' iterations). Defaults to 10.
         """
         self.initialise_tree(corpus, max_depth=self.num_levels)
         for it in range(num_iterations):
