@@ -1,5 +1,5 @@
-import sys
 import numpy as np
+
 from math import log
 from numpy.random import RandomState
 
@@ -39,9 +39,6 @@ class HLDA_Node(object):
                 f'parent={parent_idx}')
 
     def add_child_node(self):
-        """
-        Create a new child node below the current level.
-        """
         new_child = HLDA_Node(self.hierarchy_depth, self.vocabulary, 
                               parent_node=self, 
                               current_level=self.level_id + 1)
@@ -50,9 +47,6 @@ class HLDA_Node(object):
         return new_child
 
     def is_bottom_level(self):
-        """
-        Check if this node sits at the bottom of the tree (leaf).
-        """
         return self.level_id == self.hierarchy_depth - 1
 
     def grow_branch_to_leaf(self):
@@ -73,7 +67,7 @@ class HLDA_Node(object):
         cursor.num_customers -= 1
         if cursor.num_customers == 0:
             cursor.parent_node.remove_child(cursor)
-        for _ in range(1, self.hierarchy_depth):  # skipping root
+        for _ in range(1, self.hierarchy_depth):  # starting from the level below root
             cursor = cursor.parent_node
             cursor.num_customers -= 1
             if cursor.num_customers == 0:
@@ -97,20 +91,24 @@ class HLDA_Node(object):
             cursor = cursor.parent_node
             cursor.num_customers += 1
 
-    def draw_child_or_new(self, gamma):
+    def CRP(self, gamma):
         """
         Implements the CRP logic: either select an existing child
         or create a new child (depending on gamma).
+        
+        :param gamma: Hyperparameter that controls the likelihood of creating a new child node.
+                      - A higher gamma increases the probability of adding new nodes (more exploration).
+                      - A lower gamma encourages nodes to reuse existing children (more exploitation).
+                      - **Bounded**: `gamma >= 0`. Typically set to a value between 0 and 10.
         """
         all_candidates = len(self.child_nodes) + 1
-        probabilities = np.zeros(all_candidates)
-        probabilities[0] = gamma / (gamma + self.num_customers)
-        idx = 1
-        for ch in self.child_nodes:
-            probabilities[idx] = float(ch.num_customers) / (gamma + self.num_customers)
-            idx += 1
+        probabilities = []
+        probabilities.append(gamma / (gamma + self.num_customers)) 
+        for children in self.child_nodes:
+            probabilities.append(float(children.num_customers) / (gamma + self.num_customers))
 
         chosen = self.rng.multinomial(1, probabilities).argmax()
+        
         if chosen == 0:
             return self.add_child_node()
         else:
@@ -135,49 +133,57 @@ class HLDA_Node(object):
 
 class HierarchicalLDA(object):
 
-    def __init__(self, docs, vocabulary,
+    def __init__(self, corpus, vocabulary, levels,
                  alpha=10.0, gamma=1.0, eta=0.1,
-                 seed=0, verbose=True, levels=3):
+                 seed=0, verbose=True):
 
         # Reset class-level counters
         HLDA_Node.total_created_nodes = 0
         HLDA_Node.highest_node_index = 0
 
-        self.documents = docs
+        self.documents = corpus
         self.vocab = vocabulary
-        self.alpha = alpha  # smoothing for doc-topic
-        self.gamma = gamma  # CRP parameter
-        self.eta = eta      # smoothing for topic-word
+        
+        self.alpha = alpha  # Smoothing for doc-topic distribution.
+                             # A higher alpha increases topic diversity, while a lower alpha makes documents more specific to fewer topics.
+                             # **Bounded**: `alpha > 0`. Typical values range from 1 to 100, depending on the desired granularity of topics.
+        self.gamma = gamma  # CRP parameter: controls the likelihood of creating new nodes.
+                             # - A larger gamma encourages the creation of new nodes (increased model complexity).
+                             # - A smaller gamma favors reusing existing nodes (more stable structure).
+                             # **Bounded**: `gamma >= 0`. Typical values range from 0.1 to 10.
+        self.eta = eta      # Smoothing for topic-word distribution.
+                             # A higher eta makes the model more likely to assign a word to multiple topics.
+                             # A smaller eta makes the topic-word distributions more sparse.
+                             # **Bounded**: `eta > 0`. Typical values range from 0.01 to 0.5.
+
 
         self.rand_seed = seed
         self.rng = RandomState(seed)
         self.verbose = verbose
 
         self.num_levels = levels
-        self.num_docs = len(docs)
+        self.num_docs = len(corpus)
         self.num_terms = len(vocabulary)
         self.eta_sum = self.eta * self.num_terms
 
-        # Initialize root node
         self.root = HLDA_Node(self.num_levels, self.vocab)
         # Keep track of leaf node for each document
         self.doc_to_leaf = {}
         # For each doc, keep track of the level assignment for each token
-        self.token_levels = np.zeros(self.num_docs, dtype=object)  # Changed dtype=np.object to dtype=object
+        self.token_levels = np.zeros(self.num_docs, dtype=object)
 
-        # Prepare a path container
-        path_placeholder = np.zeros(self.num_levels, dtype=object)
-
+        # Temporary place holder of path for each of the document. Initialised for every single doc
+        path_placeholder = np.zeros(self.num_levels, dtype=object) 
+        path_placeholder[0] = self.root
+        
         # Assign each document to an initial path
         for doc_idx, doc in enumerate(self.documents):
             doc_len = len(doc)
-            # Start from the root
-            path_placeholder[0] = self.root
             self.root.num_customers += 1
-            # Step down the hierarchy
+            
             for depth in range(1, self.num_levels):
                 parent = path_placeholder[depth - 1]
-                chosen_child = parent.draw_child_or_new(self.gamma)
+                chosen_child = parent.CRP(self.gamma)
                 chosen_child.num_customers += 1
                 path_placeholder[depth] = chosen_child
 
@@ -194,33 +200,42 @@ class HierarchicalLDA(object):
                 chosen_node.word_total += 1
                 self.token_levels[doc_idx][token_i] = chosen_level
 
-    def run_sampler(self, iterations, topic_display_interval=50, top_n_words=5, show_word_counts=True):
+    def gibbs_sampling(self, iterations, topic_display_interval=50, top_n_words=5, show_word_counts=True):
         """
         Main sampling loop for Hierarchical LDA.
         """
         print('Starting Hierarchical LDA sampling\n')
+        printing_counter = 0
         for it in range(iterations):
+            # Calculate percentage of completion
+            percent_done = (it + 1) / iterations * 100
+            
+            # Print every 10% progress
+            if (it + 1) % (iterations // 10) == 0:  
+                print(f"{int(percent_done)}% done")
 
-            sys.stdout.write('.')
-
-            # 1) Resample the path for each document
+            # 1) Path sampling
             for d_idx in range(self.num_docs):
                 self.sample_new_path(d_idx)
 
-            # 2) Resample level assignments for each token in each document
+            # 2) Level sampling
             for d_idx in range(self.num_docs):
                 self.sample_new_levels(d_idx)
-
-            # Optionally display topics
+            
+            # Display topics
             if (it > 0) and ((it + 1) % topic_display_interval == 0):
-                print(f" {it + 1}")
+                printing_counter += 1
+                print(f"*********************The {printing_counter} result**************************")
                 self.exhibit_nodes(top_n_words, show_word_counts)
+            
+        print('Gibbs sampling completed')
+
 
     def sample_new_path(self, doc_index):
         """
         Sample a new path for a particular document through the NCRP tree.
         """
-        # Retrieve path up from the doc's leaf
+        # Retrieve path from the doc's leaf
         path_nodes = np.zeros(self.num_levels, dtype=object)
         node_cursor = self.doc_to_leaf[doc_index]
         for lvl in range(self.num_levels - 1, -1, -1):
@@ -234,13 +249,15 @@ class HierarchicalLDA(object):
         path_weights = {}
         self._calc_ncrp_prior(path_weights, self.root, 0.0)
 
-        # Build dictionary of how many times each word appears at each level
-        level_word_hist = {lvl: {} for lvl in range(self.num_levels)}
-        doc_levels = self.token_levels[doc_index]
+        # Token allocation of current dox
+        doc_levels = self.token_levels[doc_index] 
+        # Current Document
         current_doc = self.documents[doc_index]
+        # Empty dictionary for how many times each word appears at each level. Dict of Dict
+        level_word_hist = {lvl: {} for lvl in range(self.num_levels)}
 
         # Remove doc's counts from those nodes
-        for i, w in enumerate(current_doc):
+        for i, w in enumerate(current_doc): # Looping through tokens of current document
             level_assn = doc_levels[i]
             level_word_hist[level_assn][w] = level_word_hist[level_assn].get(w, 0) + 1
 
@@ -286,7 +303,8 @@ class HierarchicalLDA(object):
             branch_weight = log(float(child.num_customers) / (node.num_customers + self.gamma))
             self._calc_ncrp_prior(weight_map, child, log_prob + branch_weight)
 
-        weight_map[node] = log_prob + log(self.gamma / (node.num_customers + self.gamma))
+        # Finally, add in the probability of a new table
+        weight_map[node] = log_prob + log(self.gamma / (node.num_customers + self.gamma)) 
 
     def _calc_doc_likelihood(self, weight_map, level_word_hist):
         """
@@ -383,6 +401,10 @@ class HierarchicalLDA(object):
             level_counts[new_level] += 1
             path_refs[new_level].word_freqs[w_id] += 1
             path_refs[new_level].word_total += 1
+            
+#########################################################################
+# Utility functions
+#########################################################################
 
     def exhibit_nodes(self, n_top_terms, show_weights):
         """
@@ -398,3 +420,23 @@ class HierarchicalLDA(object):
         print(node_info)
         for ch in node.child_nodes:
             self._display_node(ch, indent + 1, n_top_terms, show_weights)
+    
+    def get_path_from_leaf(self, leaf_node):
+        """
+        Traverse from leaf_node up to the root, returning a list of nodes 
+        in root->leaf order.
+        Returns
+        -------
+        path_nodes: list of HLDA_Node from root -> leaf
+        """
+        path = []
+
+        # Climb up the chain
+        cursor = leaf_node
+        while cursor is not None:
+            path.append(cursor)
+            cursor = cursor.parent_node
+
+        # Returning the path from root to leaf
+        path.reverse()
+        return path

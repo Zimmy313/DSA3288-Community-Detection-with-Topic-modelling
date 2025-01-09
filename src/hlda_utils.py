@@ -2,7 +2,6 @@ import nltk
 from nltk.corpus import stopwords
 from nltk.stem import PorterStemmer, WordNetLemmatizer
 from nltk.tokenize import word_tokenize
-
 from collections import defaultdict
 
 # Ensure NLTK data is downloaded
@@ -87,3 +86,46 @@ def convert_docs_to_indices(docs, word2idx):
     return corpus
 
 
+def preprocess_and_filter_empty_with_labels(docs, labels, stop_words=None, stemmer=None, lemmatizer=None, min_word_length=2):
+    """
+    Preprocesses a list of documents, filters out empty documents, and returns the 
+    filtered documents and corresponding labels.
+    """
+    # Apply preprocessing to each document
+    processed_docs = [preprocess_text(doc, stop_words, stemmer, lemmatizer, min_word_length) for doc in docs]
+    
+    # Filter out empty documents and their corresponding labels
+    filtered_docs_labels = [(doc, label) for doc, label in zip(processed_docs, labels) if doc]
+    
+    # Separate documents and labels
+    filtered_docs, filtered_labels = zip(*filtered_docs_labels) if filtered_docs_labels else ([], [])
+    
+    return list(filtered_docs), list(filtered_labels)
+
+
+# Pipeline Function
+def full_preprocessing_pipeline(docs, labels, stop_words=None, stemmer=None, lemmatizer=None, min_word_length=2, min_freq=5):
+    """
+    This function integrates the entire preprocessing pipeline:
+    - Preprocess the documents
+    - Filter out empty documents and corresponding labels
+    - Build vocabulary
+    - Convert documents to word indices
+    
+    It prints intermediate results at each step.
+    """
+    # Step 1: Preprocess and filter empty documents
+    filtered_docs, filtered_labels = preprocess_and_filter_empty_with_labels(docs, labels, stop_words, stemmer, lemmatizer, min_word_length)
+    print(f"Number of documents after filtering empty ones: {len(filtered_docs)}")
+    print(f"Number of labels after filtering: {len(filtered_labels)}")
+    
+    # Step 2: Build vocabulary
+    vocab, word2idx, idx2word = build_vocabulary(filtered_docs, min_freq)
+    print("")
+    print(f"Vocabulary size (words with freq >= {min_freq}): {len(vocab)}")
+    print(f"Sample vocabulary words: {vocab[:10]}")
+    
+    # Step 3: Convert documents to indices
+    corpus = convert_docs_to_indices(filtered_docs, word2idx)
+    print("Preprecessing done")
+    return filtered_docs, filtered_labels, vocab, word2idx, idx2word, corpus

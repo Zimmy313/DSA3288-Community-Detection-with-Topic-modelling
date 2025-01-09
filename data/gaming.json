@@ -1,0 +1,101 @@
+{
+    "Gaming": {
+      "vocab": ["video games", "gameplay", "multiplayer", "esports", "game development"],
+      "Platforms": {
+        "vocab": ["PC", "console", "mobile", "VR", "AR"],
+        "PC Gaming": {
+          "vocab": ["Steam", "Epic Games Store", "mods", "high-resolution", "customization"],
+          "Steam": {
+            "vocab": ["Steam Deck", "Steam Workshop", "SteamVR", "community features", "Steam sales"]
+          },
+          "Epic Games Store": {
+            "vocab": ["free games", "exclusive titles", "Epic Mega Sale", "Fortnite", "Unreal Engine"]
+          }
+        },
+        "Console Gaming": {
+          "vocab": ["PlayStation", "Xbox", "Nintendo", "exclusive games", "console hardware"],
+          "PlayStation": {
+            "vocab": ["PS5", "DualSense controller", "PlayStation Network", "exclusive titles", "PS Plus"]
+          },
+          "Xbox": {
+            "vocab": ["Xbox Series X", "Xbox Game Pass", "Xbox Live", "backward compatibility", "exclusive titles"]
+          }
+        },
+        "Mobile Gaming": {
+          "vocab": ["iOS games", "Android games", "app stores", "touch controls", "mobile apps"],
+          "iOS Games": {
+            "vocab": ["App Store", "iPhone gaming", "iPad games", "Apple Arcade", "touchscreen"]
+          },
+          "Android Games": {
+            "vocab": ["Google Play", "Android devices", "mobile gaming", "app development", "play store"]
+          }
+        }
+      },
+      "Game Development": {
+        "vocab": ["coding", "game engines", "art assets", "level design", "game mechanics"],
+        "Indie Game Development": {
+          "vocab": ["small teams", "creative freedom", "crowdfunding", "unique concepts", "indie titles"],
+          "Solo Developers": {
+            "vocab": ["self-published", "one-person projects", "independent creation", "personal vision", "single-handed development"]
+          }
+        },
+        "AAA Game Development": {
+          "vocab": ["big-budget", "large teams", "high production values", "blockbuster titles", "mainstream"],
+          "Large Studios": {
+            "vocab": ["Electronic Arts", "Activision", "Ubisoft", "Rockstar Games", "Sony Interactive"]
+          }
+        },
+        "VR Game Development": {
+          "vocab": ["virtual reality", "immersive", "headsets", "interactive environments", "motion controls"],
+          "Oculus Rift Games": {
+            "vocab": ["Oculus Quest", "VR experiences", "immersive gameplay", "virtual worlds", "interactive narratives"]
+          }
+        }
+      },
+      "eSports": {
+        "vocab": ["competitive gaming", "tournaments", "professional players", "streaming", "teams"],
+        "Competitive Gaming": {
+          "vocab": ["tournaments", "professional leagues", "prize pools", "rankings", "team strategies"],
+          "League of Legends": {
+            "vocab": ["Summoner's Rift", "champions", "esports league", "World Championship", "teams"]
+          }
+        },
+        "Streaming": {
+          "vocab": ["live streaming", "viewers", "streamers", "broadcasting", "content creation"],
+          "Twitch Streaming": {
+            "vocab": ["streamers", "subscriptions", "bits", "emotes", "live chat"]
+          }
+        }
+      },
+      "Gaming Communities": {
+        "vocab": ["forums", "social interaction", "guilds", "fan bases", "online communities"],
+        "Online Forums": {
+          "vocab": ["discussion boards", "threads", "posts", "moderation", "user engagement"],
+          "Reddit Communities": {
+            "vocab": ["subreddits", "upvotes", "comments", "discussion threads", "community rules"]
+          }
+        },
+        "Discord Servers": {
+          "vocab": ["chat rooms", "voice channels", "server roles", "moderators", "bots"],
+          "Gaming Subreddits": {
+            "vocab": ["r/gaming", "r/games", "r/pcgaming", "r/consolegaming", "r/esports"]
+          }
+        }
+      },
+      "eSports Events": {
+        "vocab": ["live events", "tournament brackets", "spectators", "sponsors", "broadcasting"],
+        "Major Tournaments": {
+          "vocab": ["The International", "World Championships", "Major League Gaming", "ESL One", "Intel Extreme Masters"],
+          "The International": {
+            "vocab": ["Dota 2", "prize pool", "team competition", "worldwide participants", "live finals"]
+          }
+        },
+        "Online Tournaments": {
+          "vocab": ["online qualifiers", "virtual arenas", "remote play", "internet streaming", "regional qualifiers"],
+          "LAN Events": {
+            "vocab": ["local area network", "in-person competition", "offline matches", "team meetups", "live audience"]
+          }
+        }
+      }
+    }
+  }

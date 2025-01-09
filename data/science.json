@@ -1,0 +1,191 @@
+{
+    "Science": {
+      "vocab": ["experiment", "hypothesis", "theory", "research", "analysis", "data", "measurement", "observation", "variables", "methodology"],
+      "Biology": {
+        "vocab": ["cell", "organism", "gene", "DNA", "ecosystem"],
+        "Genetics": {
+          "vocab": ["genotype", "phenotype", "inheritance", "mutation", "allele"],
+          "Molecular Genetics": {
+            "vocab": ["DNA sequencing", "gene expression", "CRISPR", "genetic engineering", "genomic"]
+          },
+          "Population Genetics": {
+            "vocab": ["gene pool", "allele frequency", "selection", "drift", "migration"]
+          }
+        },
+        "Ecology": {
+          "vocab": ["biosphere", "trophic levels", "habitat", "biodiversity", "niche"],
+          "Marine Ecology": {
+            "vocab": ["coral reefs", "marine biodiversity", "ocean currents", "plankton", "marine conservation"]
+          },
+          "Conservation Ecology": {
+            "vocab": ["endangered species", "habitat restoration", "sustainable practices", "conservation strategies", "protected areas"]
+          }
+        },
+        "Microbiology": {
+          "vocab": ["microorganism", "bacteria", "virus", "fungi", "protozoa"],
+          "Bacteriology": {
+            "vocab": ["pathogenic bacteria", "antibiotics", "bacterial culture", "Gram staining", "bacterial metabolism"]
+          },
+          "Virology": {
+            "vocab": ["viral replication", "virus structure", "viral infection", "antiviral drugs", "vaccine development"]
+          }
+        }
+      },
+      "Physics": {
+        "vocab": ["force", "energy", "motion", "quantum", "relativity"],
+        "Quantum Mechanics": {
+          "vocab": ["wavefunction", "superposition", "entanglement", "quantum tunneling", "Heisenberg uncertainty"],
+          "Quantum Computing": {
+            "vocab": ["qubits", "quantum gates", "entanglement", "superposition", "quantum algorithms"]
+          },
+          "Quantum Optics": {
+            "vocab": ["photons", "laser", "quantum states", "interference", "coherence"]
+          }
+        },
+        "Classical Mechanics": {
+          "vocab": ["Newton's laws", "kinematics", "dynamics", "statics", "motion equations"],
+          "Fluid Mechanics": {
+            "vocab": ["flow rate", "viscosity", "turbulence", "laminar flow", "Bernoulli's principle"]
+          },
+          "Rigid Body Dynamics": {
+            "vocab": ["torque", "angular momentum", "inertia", "rotational motion", "gyroscope"]
+          }
+        },
+        "Astrophysics": {
+          "vocab": ["galaxy", "star", "planet", "black hole", "cosmos"],
+          "Cosmology": {
+            "vocab": ["Big Bang", "dark matter", "dark energy", "cosmic microwave background", "universe expansion"]
+          },
+          "Stellar Physics": {
+            "vocab": ["stellar evolution", "nucleosynthesis", "supernova", "white dwarf", "neutron star"]
+          }
+        }
+      },
+      "Chemistry": {
+        "vocab": ["reaction", "molecule", "compound", "atom", "bond"],
+        "Organic Chemistry": {
+          "vocab": ["hydrocarbon", "functional group", "isomer", "synthesis", "polymer"],
+          "Synthesis": {
+            "vocab": ["chemical reactions", "reaction mechanisms", "reagents", "catalysis", "organic synthesis"]
+          },
+          "Medicinal Chemistry": {
+            "vocab": ["drug design", "pharmacophores", "biologics", "medicinal compounds", "therapeutics"]
+          }
+        },
+        "Inorganic Chemistry": {
+          "vocab": ["coordination compounds", "metals", "nonmetals", "crystal structures", "catalysts"],
+          "Coordination Chemistry": {
+            "vocab": ["ligands", "coordination number", "metal complexes", "chelation", "spectrochemistry"]
+          },
+          "Solid-State Chemistry": {
+            "vocab": ["crystallography", "band theory", "semiconductors", "superconductors", "solid solutions"]
+          }
+        },
+        "Biochemistry": {
+          "vocab": ["enzymes", "metabolism", "proteins", "lipids", "carbohydrates"],
+          "Enzymology": {
+            "vocab": ["enzyme kinetics", "active site", "substrate specificity", "inhibition", "allosteric regulation"]
+          },
+          "Metabolism": {
+            "vocab": ["catabolism", "anabolism", "ATP production", "glycolysis", "Krebs cycle"]
+          }
+        }
+      },
+      "Mathematics": {
+        "vocab": ["theorem", "proof", "calculus", "algebra", "geometry"],
+        "Algebra": {
+          "vocab": ["variables", "equations", "polynomials", "linear algebra", "groups"],
+          "Abstract Algebra": {
+            "vocab": ["groups", "rings", "fields", "modules", "homomorphisms"]
+          },
+          "Linear Algebra": {
+            "vocab": ["vectors", "matrices", "determinants", "eigenvalues", "vector spaces"]
+          }
+        },
+        "Calculus": {
+          "vocab": ["derivative", "integral", "limit", "continuity", "series"],
+          "Differential Calculus": {
+            "vocab": ["derivatives", "rate of change", "tangent lines", "optimization", "slopes"]
+          },
+          "Integral Calculus": {
+            "vocab": ["integration", "area under curve", "antiderivatives", "definite integrals", "indefinite integrals"]
+          }
+        },
+        "Statistics": {
+          "vocab": ["probability", "distribution", "variance", "mean", "median"],
+          "Descriptive Statistics": {
+            "vocab": ["mean", "median", "mode", "standard deviation", "range"]
+          },
+          "Inferential Statistics": {
+            "vocab": ["hypothesis testing", "confidence intervals", "regression", "ANOVA", "p-value"]
+          }
+        },
+        "Number Theory": {
+          "vocab": ["prime numbers", "divisibility", "modular arithmetic", "diophantine equations", "number patterns"],
+          "Prime Numbers": {
+            "vocab": ["prime factors", "sieve of Eratosthenes", "twin primes", "Goldbach conjecture", "Mersenne primes"]
+          },
+          "Modular Arithmetic": {
+            "vocab": ["congruence", "modulus", "residues", "modular inverses", "applications in cryptography"]
+          }
+        },
+        "Topology": {
+          "vocab": ["continuity", "open sets", "closed sets", "homeomorphism", "compactness"],
+          "Point-Set Topology": {
+            "vocab": ["topological space", "basis", "neighborhoods", "connectedness", "separation axioms"]
+          },
+          "Algebraic Topology": {
+            "vocab": ["homology", "homotopy", "fundamental group", "simplicial complexes", "chain complexes"]
+          }
+        }
+      },
+      "Computer Science": {
+        "vocab": ["algorithm", "data structure", "programming", "software", "hardware"],
+        "Artificial Intelligence": {
+          "vocab": ["machine learning", "neural networks", "natural language processing", "computer vision", "robotics"],
+          "Machine Learning": {
+            "vocab": ["supervised learning", "unsupervised learning", "reinforcement learning", "classification", "regression"]
+          },
+          "Natural Language Processing": {
+            "vocab": ["tokenization", "sentiment analysis", "machine translation", "language models", "speech recognition"]
+          }
+        },
+        "Software Engineering": {
+          "vocab": ["software development", "version control", "agile", "debugging", "testing"],
+          "Agile Methodologies": {
+            "vocab": ["Scrum", "Kanban", "sprints", "user stories", "backlog"]
+          },
+          "DevOps": {
+            "vocab": ["continuous integration", "continuous deployment", "automation", "monitoring", "infrastructure as code"]
+          }
+        },
+        "Data Science": {
+          "vocab": ["big data", "data mining", "data visualization", "statistical analysis", "machine learning"],
+          "Data Mining": {
+            "vocab": ["clustering", "association rules", "classification", "regression", "anomaly detection"]
+          },
+          "Data Visualization": {
+            "vocab": ["charts", "graphs", "dashboards", "infographics", "data storytelling"]
+          }
+        },
+        "Theoretical Computer Science": {
+          "vocab": ["algorithms", "computational complexity", "automata", "formal languages", "cryptography"],
+          "Algorithms": {
+            "vocab": ["sorting", "searching", "graph algorithms", "dynamic programming", "greedy algorithms"]
+          },
+          "Cryptography": {
+            "vocab": ["encryption", "decryption", "hash functions", "public key", "symmetric key"]
+          }
+        },
+        "Human-Computer Interaction": {
+          "vocab": ["usability", "user interface", "user experience", "accessibility", "interaction design"],
+          "User Interface Design": {
+            "vocab": ["wireframes", "prototypes", "responsive design", "layout", "visual hierarchy"]
+          },
+          "Usability Testing": {
+            "vocab": ["user testing", "feedback", "A/B testing", "heuristic evaluation", "task analysis"]
+          }
+        }
+      }
+    }
+  }
