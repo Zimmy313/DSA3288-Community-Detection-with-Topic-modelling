@@ -4,7 +4,7 @@ from math import log
 from numpy.random import RandomState
 
 
-class HLDA_Node(object):
+class HLDA_Node:
 
     # Class-wide tracking of how many nodes have been created
     total_created_nodes = 0
@@ -131,7 +131,7 @@ class HLDA_Node(object):
         return ', '.join(words_out)
 
 
-class HierarchicalLDA(object):
+class HierarchicalLDA:
 
     def __init__(self, corpus, vocabulary, levels,
                  alpha=10.0, gamma=1.0, eta=0.1,
@@ -225,10 +225,12 @@ class HierarchicalLDA(object):
             # Display topics
             if (it > 0) and ((it + 1) % topic_display_interval == 0):
                 printing_counter += 1
-                print(f"*********************The {printing_counter} result**************************")
+                print(f"*********************The {printing_counter}th result**************************")
                 self.exhibit_nodes(top_n_words, show_word_counts)
-            
+           
+        print(f'A total of {HLDA_Node.total_created_nodes} topic nodes have been created') 
         print('Gibbs sampling completed')
+        
 
 
     def sample_new_path(self, doc_index):
@@ -407,9 +409,6 @@ class HierarchicalLDA(object):
 #########################################################################
 
     def exhibit_nodes(self, n_top_terms, show_weights):
-        """
-        Helper function to print out topic nodes in a hierarchical fashion.
-        """
         self._display_node(self.root, 0, n_top_terms, show_weights)
 
     def _display_node(self, node, indent, n_top_terms, show_weights):
@@ -440,3 +439,63 @@ class HierarchicalLDA(object):
         # Returning the path from root to leaf
         path.reverse()
         return path
+    
+    def get_path_info_from_leaf(self, leaf_node):
+        """
+        Get the path information as a list of tuples (node_index, level_id).
+        
+        Parameters
+        ----------
+        leaf_node : HLDA_Node
+            The leaf node from which to extract the path.
+
+        Returns
+        -------
+        path_info : list of tuples
+            Each tuple contains (node_index, level_id) from root to leaf.
+        """
+        path_nodes = self.get_path_from_leaf(leaf_node)
+        return [(node.node_index, node.level_id) for node in path_nodes]
+    
+    def get_number_of_topics(self):
+        return HLDA_Node.__class__.total_created_nodes
+    
+    def compare_with_original(self, original_doc_paths):
+        """
+        Utility function to compare the reconstructed tree
+
+        Parameters
+        ----------
+        original_doc_paths : list of list of tuples
+            original_doc_paths[i] is the list of (node_index, level_id) 
+            used to generate the synthetic_corpus[i].
+
+        Returns
+        -------
+        accuracy : float
+            The fraction of documents where the recovered path matches the original path.
+        """
+        correct = 0
+        total = len(original_doc_paths)
+
+        for doc_idx, original_path in enumerate(original_doc_paths):
+            recovered_leaf = self.doc_to_leaf.get(doc_idx, None)
+            if recovered_leaf is None:
+                continue
+            recovered_path = self.get_path_info_from_leaf(recovered_leaf)
+
+            # Compare each level in the path
+            match = True
+            for orig, recov in zip(original_path, recovered_path):
+                orig_node_idx, orig_level = orig
+                recov_node_idx, recov_level = recov
+                if orig_node_idx != recov_node_idx or orig_level != recov_level:
+                    match = False
+                    break
+
+            if match:
+                correct += 1
+
+        accuracy = correct / total if total > 0 else 0.0
+        print(f"Accuracy of recovered paths: {accuracy*100:.2f}%")
+        return accuracy
