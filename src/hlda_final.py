@@ -1,29 +1,49 @@
 import numpy as np
-
+import time
 from math import log
 from numpy.random import RandomState
 
+class NCRPNode:
+    """
+    This class represents a node (topic).
+    
+    Each node has:
+      - n_w       : array of counts of each word w in this node/topic
+      - n_sum     : total count of words assigned to this node
+      - parent    : link to the parent in the tree
+      - children  : a list of child nodes
+      - num_docs  : how many documents currently use this node in their path
+      - level_id  : which level of the hierarchy this node is at (0 = root)
+    """
 
-class HLDA_Node:
-
-    # Class-wide tracking of how many nodes have been created
     total_created_nodes = 0
     highest_node_index = 0
 
-    def __init__(self, hierarchy_levels, vocabulary, parent_node=None, current_level=0, rng=None):
+    def __init__(self, L, vocabulary, parent=None, level_id=0, rng=None):
+        """
+        Parameters
+        ----------
+        L : int
+            The total number of levels in the hierarchy.
+        vocabulary : list or array of strings
+        parent : NCRPNode or None
+        level_id : int
+            Which level (0-based) this node is at (root=0).
+        rng : np.random.RandomState
+        """
+        self.node_index = NCRPNode.highest_node_index
+        NCRPNode.highest_node_index += 1
 
-        self.node_index = HLDA_Node.highest_node_index
-        HLDA_Node.highest_node_index += 1
+        self.num_docs = 0            # number of documents served by this node
+        self.parent = parent
+        self.children = []
+        self.level_id = level_id
+        self.hierarchy_depth = L
 
-        self.num_customers = 0
-        self.parent_node = parent_node
-        self.child_nodes = []
-        self.level_id = current_level
-        self.word_total = 0
-        self.hierarchy_depth = hierarchy_levels
-
+        # Word-count arrays
         self.vocabulary = np.array(vocabulary)
-        self.word_freqs = np.zeros(len(vocabulary))
+        self.n_w = np.zeros(len(vocabulary), dtype=int)  # n_{topic,w}
+        self.n_sum = 0  # sum_w n_{topic,w}
 
         if rng is None:
             self.rng = RandomState()
@@ -31,471 +51,628 @@ class HLDA_Node:
             self.rng = rng
 
     def __repr__(self):
-        parent_idx = None
-        if self.parent_node is not None:
-            parent_idx = self.parent_node.node_index
-        return (f'Node={self.node_index} level={self.level_id} '
-                f'customers={self.num_customers} total_words={self.word_total} '
-                f'parent={parent_idx}')
+        p_idx = None if self.parent is None else self.parent.node_index
+        return (f'NCRPNode(idx={self.node_index}, level={self.level_id}, '
+                f'docs={self.num_docs}, n_sum={self.n_sum}, parent={p_idx})')
 
-    def add_child_node(self):
-        new_child = HLDA_Node(self.hierarchy_depth, self.vocabulary, 
-                              parent_node=self, 
-                              current_level=self.level_id + 1)
-        self.child_nodes.append(new_child)
-        HLDA_Node.total_created_nodes += 1
-        return new_child
+    def is_leaf_level(self):
+        return (self.level_id == self.hierarchy_depth - 1)
 
-    def is_bottom_level(self):
-        return self.level_id == self.hierarchy_depth - 1
+    def add_child(self):
+        """Create a new child node (topic) at the next level down."""
+        child = NCRPNode(self.hierarchy_depth, self.vocabulary,
+                         parent=self, level_id=self.level_id + 1,
+                         rng=self.rng)
+        self.children.append(child)
+        NCRPNode.total_created_nodes += 1
+        return child
+
+    def remove_child(self, child):
+        """Remove a child node reference from this node."""
+        self.children.remove(child)
+        NCRPNode.total_created_nodes -= 1
 
     def grow_branch_to_leaf(self):
         """
-        Extend child nodes all the way down to create a leaf if this node 
-        isn't already one.
-        """
-        node_cursor = self
-        for lvl in range(self.level_id, self.hierarchy_depth - 1):
-            node_cursor = node_cursor.add_child_node()
-        return node_cursor
-
-    def decrement_path(self):
-        """
-        Remove a document from the path. If a node becomes empty, prune it.
+        If this node is not at the leaf level, create children all the way down
+        until reaching a leaf, and return that leaf node.
         """
         cursor = self
-        cursor.num_customers -= 1
-        if cursor.num_customers == 0:
-            cursor.parent_node.remove_child(cursor)
-        for _ in range(1, self.hierarchy_depth):  # starting from the level below root
-            cursor = cursor.parent_node
-            cursor.num_customers -= 1
-            if cursor.num_customers == 0:
-                cursor.parent_node.remove_child(cursor)
+        while not cursor.is_leaf_level():
+            cursor = cursor.add_child()
+        return cursor
 
-    def remove_child(self, child):
+    def decrement_doc(self):
         """
-        Remove a child node reference from this node.
-        """
-        self.child_nodes.remove(child)
-        HLDA_Node.total_created_nodes -= 1
-
-    def increment_path(self):
-        """
-        Add a document into this path, increasing the count of each node
-        along the chain.
+        Decrement one 'customer' (document) from this node's usage.
+        If num_docs goes to zero, prune this node from its parent's children.
+        Also propagate up to ancestor nodes.
         """
         cursor = self
-        cursor.num_customers += 1
+        cursor.num_docs -= 1
+        if cursor.num_docs == 0 and cursor.parent is not None:
+            cursor.parent.remove_child(cursor)
+        # Keep moving up the chain for each level
         for _ in range(1, self.hierarchy_depth):
-            cursor = cursor.parent_node
-            cursor.num_customers += 1
+            cursor = cursor.parent
+            if cursor is None:
+                break
+            cursor.num_docs -= 1
+            if cursor.num_docs == 0 and cursor.parent is not None:
+                cursor.parent.remove_child(cursor)
 
-    def CRP(self, gamma):
+    def increment_doc(self):
         """
-        Implements the CRP logic: either select an existing child
-        or create a new child (depending on gamma).
-        
-        :param gamma: Hyperparameter that controls the likelihood of creating a new child node.
-                      - A higher gamma increases the probability of adding new nodes (more exploration).
-                      - A lower gamma encourages nodes to reuse existing children (more exploitation).
-                      - **Bounded**: `gamma >= 0`. Typically set to a value between 0 and 10.
+        Add one 'customer' (document) to this node, and propagate upwards.
         """
-        all_candidates = len(self.child_nodes) + 1
-        probabilities = []
-        probabilities.append(gamma / (gamma + self.num_customers)) 
-        for children in self.child_nodes:
-            probabilities.append(float(children.num_customers) / (gamma + self.num_customers))
+        cursor = self
+        cursor.num_docs += 1
+        for _ in range(1, self.hierarchy_depth):
+            cursor = cursor.parent
+            if cursor is None:
+                break
+            cursor.num_docs += 1
 
-        chosen = self.rng.multinomial(1, probabilities).argmax()
+    def ncrp_draw_child(self, gamma):
+        """
+        Draw a child according to the nested CRP:
+          Probability of picking an existing child node:
+              (child.num_docs) / (self.num_docs + gamma)
+          Probability of creating a new child:
+              gamma / (self.num_docs + gamma)
+        """
         
-        if chosen == 0:
-            return self.add_child_node()
+        probs = []
+
+        # Probability of new child
+        probs.append(gamma / (self.num_docs + gamma))
+
+        # Probabilities for existing children
+        for ch in self.children:
+            probs.append(ch.num_docs / (self.num_docs + gamma))
+
+        chosen_idx = self.rng.multinomial(1, probs).argmax()
+        if chosen_idx == 0:
+            return self.add_child()
         else:
-            return self.child_nodes[chosen - 1]
+            return self.children[chosen_idx - 1]
 
-    def top_n_words(self, n_terms, show_weights):
-        """
-        Return the top n words (and optionally their counts).
-        """
-        sorted_positions = np.argsort(self.word_freqs)[::-1]
-        sorted_vocab = self.vocabulary[sorted_positions][:n_terms]
-        sorted_counts = self.word_freqs[sorted_positions][:n_terms]
+    def top_words(self, n_terms=5, show_counts=True):
+        """Return the top n words in this topic."""
+        order = np.argsort(self.n_w)[::-1]
+        best_ids = order[:n_terms]
+        best_counts = self.n_w[best_ids]
+        best_words = self.vocabulary[best_ids]
+        if show_counts:
+            return ', '.join(f'{w}({c})' for w, c in zip(best_words, best_counts))
+        else:
+            return ', '.join(best_words)
 
-        words_out = []
-        for w, c in zip(sorted_vocab, sorted_counts):
-            if show_weights:
-                words_out.append(f'{w} ({int(c)})')
-            else:
-                words_out.append(w)
-        return ', '.join(words_out)
+##############################################################################
+# Hierarchical LDA main class
+##############################################################################
+class hLDA:
+    """
+    This class implements hierarchical LDA using the nested CRP,
+    following the notation and sampling approach in Blei (2004).
+    """
 
-
-class HierarchicalLDA:
-
-    def __init__(self, corpus, vocabulary, levels,
+    def __init__(self, corpus, vocabulary, L,
                  alpha=10.0, gamma=1.0, eta=0.1,
-                 seed=0, verbose=True):
-
-        # Reset class-level counters
-        HLDA_Node.total_created_nodes = 0
-        HLDA_Node.highest_node_index = 0
+                 seed=0,verbose = False):
+        """
+        Parameters
+        ----------
+        corpus : list of lists
+            Each item is a document, which is a list of integer word IDs.
+        vocabulary : list of str
+            The mapping from word_id -> actual word string.
+        L : int
+            Number of levels in the topic hierarchy.
+        alpha : float
+                - alpha = document-level smoothing (Dirichlet prior)
+        gamma : float
+            - gamma = nCRP parameter controlling how likely new branches are created
+        eta : float
+            - eta   = topic-word Dirichlet parameter
+        seed : int
+        verbose: bool
+        """
+        # Reset counters
+        NCRPNode.total_created_nodes = 1 # This account for the root
+        NCRPNode.highest_node_index = 0
 
         self.documents = corpus
         self.vocab = vocabulary
-        
-        self.alpha = alpha  # Smoothing for doc-topic distribution.
-                             # A higher alpha increases topic diversity, while a lower alpha makes documents more specific to fewer topics.
-                             # **Bounded**: `alpha > 0`. Typical values range from 1 to 100, depending on the desired granularity of topics.
-        self.gamma = gamma  # CRP parameter: controls the likelihood of creating new nodes.
-                             # - A larger gamma encourages the creation of new nodes (increased model complexity).
-                             # - A smaller gamma favors reusing existing nodes (more stable structure).
-                             # **Bounded**: `gamma >= 0`. Typical values range from 0.1 to 10.
-        self.eta = eta      # Smoothing for topic-word distribution.
-                             # A higher eta makes the model more likely to assign a word to multiple topics.
-                             # A smaller eta makes the topic-word distributions more sparse.
-                             # **Bounded**: `eta > 0`. Typical values range from 0.01 to 0.5.
+        self.num_docs = len(corpus)
+        self.L = L
+        self.alpha = alpha
+        self.gamma = gamma
+        self.eta = eta
 
-
-        self.rand_seed = seed
         self.rng = RandomState(seed)
+
+        self.V = len(vocabulary)
+        self.eta_sum = self.eta * self.V  # sum_{w} eta if symmetric
         self.verbose = verbose
 
-        self.num_levels = levels
-        self.num_docs = len(corpus)
-        self.num_terms = len(vocabulary)
-        self.eta_sum = self.eta * self.num_terms
-
-        self.root = HLDA_Node(self.num_levels, self.vocab)
-        # Keep track of leaf node for each document
-        self.doc_to_leaf = {}
-        # For each doc, keep track of the level assignment for each token
-        self.token_levels = np.zeros(self.num_docs, dtype=object)
-
-        # Temporary place holder of path for each of the document. Initialised for every single doc
-        path_placeholder = np.zeros(self.num_levels, dtype=object) 
-        path_placeholder[0] = self.root
+        # Keep track of each doc's leaf node c_d
+        self.doc_leaf = {}
         
-        # Assign each document to an initial path
-        for doc_idx, doc in enumerate(self.documents):
-            doc_len = len(doc)
-            self.root.num_customers += 1
-            
-            for depth in range(1, self.num_levels):
-                parent = path_placeholder[depth - 1]
-                chosen_child = parent.CRP(self.gamma)
-                chosen_child.num_customers += 1
-                path_placeholder[depth] = chosen_child
+        # For each doc, store the level assignment z_{di}
+        self.z_tokens = np.zeros(self.num_docs, dtype=object)
 
-            # Store the leaf node for this doc
-            leaf_for_doc = path_placeholder[self.num_levels - 1]
-            self.doc_to_leaf[doc_idx] = leaf_for_doc
+        # Create root node
+        self.root = NCRPNode(L=self.L, vocabulary=self.vocab, level_id=0, rng=self.rng)
+        
 
-            # Randomly assign each token in doc to one of the levels in the path
-            self.token_levels[doc_idx] = np.zeros(doc_len, dtype=int) 
-            for token_i, word_id in enumerate(doc):
-                chosen_level = self.rng.randint(self.num_levels)
-                chosen_node = path_placeholder[chosen_level]
-                chosen_node.word_freqs[word_id] += 1
-                chosen_node.word_total += 1
-                self.token_levels[doc_idx][token_i] = chosen_level
+        # Initialize each doc's path (c_d) at random
+        path_buffer = np.zeros(self.L, dtype=object)
+        path_buffer[0] = self.root
 
-    def gibbs_sampling(self, iterations, topic_display_interval=50, top_n_words=5, show_word_counts=True):
+        for d_idx, doc in enumerate(self.documents):
+            # "Seat" doc d at each level from root down
+            self.root.num_docs += 1
+            for depth in range(1, self.L):
+                child_node = path_buffer[depth - 1].ncrp_draw_child(self.gamma)
+                child_node.num_docs += 1
+                path_buffer[depth] = child_node
+
+            leaf_node = path_buffer[self.L - 1]
+            self.doc_leaf[d_idx] = leaf_node
+
+            # Randomly initialize each token's level z_{di}
+            self.z_tokens[d_idx] = np.zeros(len(doc), dtype=int)
+            for i, w_id in enumerate(doc):
+                z_level = self.rng.randint(self.L)
+                self.z_tokens[d_idx][i] = z_level
+                path_buffer[z_level].n_w[w_id] += 1
+                path_buffer[z_level].n_sum += 1
+
+    def gibbs_sampling(self, iterations,
+                   display_interval=50, top_n=5, show = True):
         """
-        Main sampling loop for Hierarchical LDA.
+        Run collapsed Gibbs sampling for hierarchical LDA, with burn-in.
+
+        Parameters
+        ----------
+        iterations : int
+            Total number of Gibbs sampling iterations.
+        display_interval : int
+            Print out topics every N iterations.
+        top_n : int
+            Number of top words to display for each node.
+        show : bool
+            Whether or not to print the structure
         """
-        print('Starting Hierarchical LDA sampling\n')
-        printing_counter = 0
+        print("Starting hierarchical LDA sampling...")
+        start_time = time.time()
+
         for it in range(iterations):
-            # Calculate percentage of completion
-            percent_done = (it + 1) / iterations * 100
-            
-            # Print every 10% progress
-            if (it + 1) % (iterations // 10) == 0:  
-                print(f"{int(percent_done)}% done")
-
             # 1) Path sampling
-            for d_idx in range(self.num_docs):
-                self.sample_new_path(d_idx)
+            for d in range(self.num_docs):
+                self._sample_path_for_doc(d)
 
-            # 2) Level sampling
-            for d_idx in range(self.num_docs):
-                self.sample_new_levels(d_idx)
+            # 2) Level assignment sampling
+            for d in range(self.num_docs):
+                self._sample_levels_for_doc(d)
+
             
             # Display topics
-            if (it > 0) and ((it + 1) % topic_display_interval == 0):
-                printing_counter += 1
-                print(f"*********************The {printing_counter}th result**************************")
-                self.exhibit_nodes(top_n_words, show_word_counts)
-           
-        print(f'A total of {HLDA_Node.total_created_nodes} topic nodes have been created') 
-        print('Gibbs sampling completed')
-        
+            if (it + 1) % display_interval == 0 and show == True:
+                print(f"Iteration {it+1}")
+                self.exhibit_topics(top_n=top_n)
+                
+        end_time = time.time()
+        total_time_seconds = end_time - start_time
+        total_time_minutes = round(total_time_seconds / 60, 2)
+        print(f"Total topic nodes created = {NCRPNode.total_created_nodes}")
+        return total_time_minutes
 
-
-    def sample_new_path(self, doc_index):
+    ##########################################################################
+    # PATH SAMPLING: Sample c_d for each document
+    ##########################################################################
+    def _sample_path_for_doc(self, d_idx):
         """
-        Sample a new path for a particular document through the NCRP tree.
+        Sample a new path c_d for document d via the nCRP prior * doc-likelihood.
         """
-        # Retrieve path from the doc's leaf
-        path_nodes = np.zeros(self.num_levels, dtype=object)
-        node_cursor = self.doc_to_leaf[doc_index]
-        for lvl in range(self.num_levels - 1, -1, -1):
-            path_nodes[lvl] = node_cursor
-            node_cursor = node_cursor.parent_node
+        # 1) Extract the old path from leaf -> root
+        old_path = []
+        cursor = self.doc_leaf[d_idx]
+        while cursor is not None:
+            old_path.append(cursor)
+            cursor = cursor.parent
+        old_path.reverse()  # now root -> leaf
 
-        # Temporarily remove this doc's assignment from the path
-        self.doc_to_leaf[doc_index].decrement_path()
+        # 2) Remove the doc from that old path
+        self.doc_leaf[d_idx].decrement_doc()
 
-        # Calculate prior: p(c_d | c_{-d})
-        path_weights = {}
-        self._calc_ncrp_prior(path_weights, self.root, 0.0)
+        # 3) Build local word hist of doc by level
+        doc_levels = self.z_tokens[d_idx]
+        doc_words = self.documents[d_idx]
+        level_hist = [{} for _ in range(self.L)]
+        # Decrement from each node's counts
+        for token_i, w_id in enumerate(doc_words):
+            z_level = doc_levels[token_i]
+            level_hist[z_level][w_id] = level_hist[z_level].get(w_id, 0) + 1
+            old_path[z_level].n_w[w_id] -= 1
+            old_path[z_level].n_sum -= 1
 
-        # Token allocation of current dox
-        doc_levels = self.token_levels[doc_index] 
-        # Current Document
-        current_doc = self.documents[doc_index]
-        # Empty dictionary for how many times each word appears at each level. Dict of Dict
-        level_word_hist = {lvl: {} for lvl in range(self.num_levels)}
+        # 4) Compute nCRP prior for all possible paths
+        path_logprob = {}
+        self._compute_ncrp_prior(node=self.root, log_prob=0.0, prior_map=path_logprob)
 
-        # Remove doc's counts from those nodes
-        for i, w in enumerate(current_doc): # Looping through tokens of current document
-            level_assn = doc_levels[i]
-            level_word_hist[level_assn][w] = level_word_hist[level_assn].get(w, 0) + 1
+        # 5) Compute doc-likelihood for each node
+        #    (assuming that node is "leaf" for doc d)
+        self._calc_doc_likelihood(path_logprob, level_hist)
 
-            # Update node
-            path_nodes[level_assn].word_freqs[w] -= 1
-            path_nodes[level_assn].word_total -= 1
-            assert path_nodes[level_assn].word_freqs[w] >= 0
-            assert path_nodes[level_assn].word_total >= 0
+        # 6) Sample new leaf from path_logprob
+        node_candidates = np.array(list(path_logprob.keys()))
+        vals = np.array([path_logprob[n] for n in node_candidates])
+        # log-sum-exp
+        vals = np.exp(vals - np.max(vals))
+        vals /= np.sum(vals)
+        chosen_idx = self.rng.multinomial(1, vals).argmax()
+        new_leaf = node_candidates[chosen_idx]
 
-        # Incorporate likelihood: p(w_d | c, w_{-d}, z)
-        self._calc_doc_likelihood(path_weights, level_word_hist)
+        # If chosen node not leaf => grow branch
+        if not new_leaf.is_leaf_level():
+            new_leaf = new_leaf.grow_branch_to_leaf()
 
-        # Normalize weights and choose a new node
-        candidate_nodes = np.array(list(path_weights.keys()))
-        values = np.array([path_weights[n] for n in candidate_nodes])
-        # Use log-sum-exp trick for numerical stability
-        values = np.exp(values - np.max(values))
-        values = values / np.sum(values)
+        # 7) Add doc back into new_leaf path
+        new_leaf.increment_doc()
+        self.doc_leaf[d_idx] = new_leaf
 
-        chosen_idx = self.rng.multinomial(1, values).argmax()
-        new_node = candidate_nodes[chosen_idx]
+        # 8) Restore doc's token counts in new path
+        cursor = new_leaf
+        for lvl in range(self.L-1, -1, -1):
+            for w, ct in level_hist[lvl].items():
+                cursor.n_w[w] += ct
+                cursor.n_sum += ct
+            cursor = cursor.parent
 
-        # If chosen node is not a leaf, grow it to a leaf
-        if not new_node.is_bottom_level():
-            new_node = new_node.grow_branch_to_leaf()
-
-        # Add doc back in
-        new_node.increment_path()
-        self.doc_to_leaf[doc_index] = new_node
-
-        # Restore word counts
-        for lvl in range(self.num_levels - 1, -1, -1):
-            for (w, cnt) in level_word_hist[lvl].items():
-                new_node.word_freqs[w] += cnt
-                new_node.word_total += cnt
-            new_node = new_node.parent_node
-
-    def _calc_ncrp_prior(self, weight_map, node, log_prob):
+    def _compute_ncrp_prior(self, node, log_prob, prior_map):
         """
-        Recursively compute the nested CRP prior along all branches.
+        Recursively compute the nCRP prior from root down.
+        For each node, probability = num_docs/(num_docs + gamma), plus
+        the probability of a new child = gamma/(num_docs + gamma).
         """
-        for child in node.child_nodes:
-            branch_weight = log(float(child.num_customers) / (node.num_customers + self.gamma))
-            self._calc_ncrp_prior(weight_map, child, log_prob + branch_weight)
+        # For each existing child
+        for child in node.children:
+            lp_child = log_prob + log(child.num_docs / (node.num_docs + self.gamma))
+            self._compute_ncrp_prior(child, lp_child, prior_map)
 
-        # Finally, add in the probability of a new table
-        weight_map[node] = log_prob + log(self.gamma / (node.num_customers + self.gamma)) 
+        # Also the 'new child' branch
+        prior_map[node] = log_prob + log(self.gamma / (node.num_docs + self.gamma))
 
-    def _calc_doc_likelihood(self, weight_map, level_word_hist):
+    def _calc_doc_likelihood(self, path_logprob, level_hist):
         """
-        Compute the document-specific likelihood term for each possible path.
+        For each node (potential leaf), add doc-likelihood from the tokens
+        that doc d would place at each level.
         """
-        # Pre-calculate log-likelihood for new (hypothetical) topics at each level
-        new_topic_likelihood = np.zeros(self.num_levels)
-        for lvl in range(1, self.num_levels):  # skip root
-            word_dict = level_word_hist[lvl]
-            total_tokens = 0
+        # Precompute hypothetical new-topic log-likelihood at each level
+        new_topic_log = np.zeros(self.L)
+        for lvl in range(1, self.L):
+            wdict = level_hist[lvl]
+            tot = 0
+            # brand-new node => no existing counts
+            for w_id, count in wdict.items():
+                for i in range(count):
+                    new_topic_log[lvl] += log((self.eta + i) /
+                                              (self.eta_sum + tot))
+                    tot += 1
 
-            for w, c in word_dict.items():
-                for i in range(c):
-                    new_topic_likelihood[lvl] += log((self.eta + i) / (self.eta_sum + total_tokens))
-                    total_tokens += 1
+        self._accumulate_likelihood(node=self.root,
+                                    base_val=0.0,
+                                    level_hist=level_hist,
+                                    new_topic_log=new_topic_log,
+                                    depth=0,
+                                    map_out=path_logprob)
 
-        # Recurse down from the root
-        self._accumulate_word_likelihood(weight_map, self.root, 0.0, level_word_hist, new_topic_likelihood, 0)
-
-    def _accumulate_word_likelihood(self, weight_map, node, base_val, level_word_hist, new_topic_likelihood, depth):
-        """
-        Recursively compute the word likelihood for each node in the path.
-        """
+    def _accumulate_likelihood(self, node, base_val, level_hist, new_topic_log, depth, map_out):
+        """Recursively compute the word likelihood for each node in the path."""
         local_contrib = 0.0
-        word_counts = level_word_hist[depth]
-        tokens_counted = 0
+        tokens_so_far = 0
+        wdict = level_hist[depth]
+        for w_id, count in wdict.items():
+            for i in range(count):
+                local_contrib += log((self.eta + node.n_w[w_id] + i) /
+                                     (self.eta_sum + node.n_sum + tokens_so_far))
+                tokens_so_far += 1
 
-        for w, c in word_counts.items():
-            for i in range(c):
-                local_contrib += log((self.eta + node.word_freqs[w] + i) /
-                                     (self.eta_sum + node.word_total + tokens_counted))
-                tokens_counted += 1
+        # Recurse to children
+        for ch in node.children:
+            self._accumulate_likelihood(ch,
+                                        base_val + local_contrib,
+                                        level_hist,
+                                        new_topic_log,
+                                        depth+1,
+                                        map_out)
+        # If not leaf, consider hypothetical new-topic for deeper levels
+        tmp_val = local_contrib
+        lvl = depth + 1
+        while lvl < self.L:
+            tmp_val += new_topic_log[lvl]
+            lvl += 1
 
-        # Descend to children
-        for child in node.child_nodes:
-            self._accumulate_word_likelihood(
-                weight_map,
-                child,
-                base_val + local_contrib,
-                level_word_hist,
-                new_topic_likelihood,
-                depth + 1
-            )
+        map_out[node] = map_out.get(node, base_val) + tmp_val
 
-        # If not a leaf, add the hypothetical new-topic weights for deeper levels
-        adjusted_depth = depth + 1
-        modified_contrib = local_contrib
-        while adjusted_depth < self.num_levels:
-            modified_contrib += new_topic_likelihood[adjusted_depth]
-            adjusted_depth += 1
-
-        weight_map[node] = weight_map.get(node, base_val) + modified_contrib
-
-    def sample_new_levels(self, doc_index):
+    ##########################################################################
+    # LEVEL (z_{di}) SAMPLING: Resample each token in doc
+    ##########################################################################
+    def _sample_levels_for_doc(self, d_idx):
         """
-        Resample the topic level assignment for each token in a single document.
+        For each token in doc d_idx, resample which level z_{di} it belongs to,
+        among the L nodes on that doc's path.
         """
-        current_doc = self.documents[doc_index]
-        doc_assignments = self.token_levels[doc_index]
-        level_counts = np.zeros(self.num_levels, dtype=int)  # Changed dtype=np.int to dtype=int
+        doc_words = self.documents[d_idx]
+        z_doc = self.z_tokens[d_idx]
+        level_counts = np.zeros(self.L, dtype=int)
+        for lv in z_doc:
+            level_counts[lv] += 1
 
-        # Tally current level assignments
-        for lvl in doc_assignments:
-            level_counts[lvl] += 1
+        # Identify path from leaf->root
+        path_arr = np.zeros(self.L, dtype=object)
+        c_leaf = self.doc_leaf[d_idx]
+        tmp = c_leaf
+        for lv in range(self.L-1, -1, -1):
+            path_arr[lv] = tmp
+            tmp = tmp.parent
 
-        # Identify the path (from bottom up)
-        path_refs = np.zeros(self.num_levels, dtype=object)
-        node_cursor = self.doc_to_leaf[doc_index]
-        for lvl in range(self.num_levels - 1, -1, -1):
-            path_refs[lvl] = node_cursor
-            node_cursor = node_cursor.parent_node
+        for i, w_id in enumerate(doc_words):
+            old_lv = z_doc[i]
+            level_counts[old_lv] -= 1
+            path_arr[old_lv].n_w[w_id] -= 1
+            path_arr[old_lv].n_sum -= 1
 
-        # For each token, sample a new level
-        for i, w_id in enumerate(current_doc):
-            old_level = doc_assignments[i]
+            # Compute unnormalized probabilities
+            p_z = np.zeros(self.L)
+            for lv in range(self.L):
+                p_z[lv] = ((self.alpha + level_counts[lv]) *
+                           (self.eta + path_arr[lv].n_w[w_id]) /
+                           (self.eta_sum + path_arr[lv].n_sum))
 
-            # Remove from current level
-            level_counts[old_level] -= 1
-            path_refs[old_level].word_freqs[w_id] -= 1
-            path_refs[old_level].word_total -= 1
+            # Normalize + sample
+            p_z /= p_z.sum()
+            new_lv = self.rng.multinomial(1, p_z).argmax()
 
-            # Compute level probabilities
-            prob_vector = np.zeros(self.num_levels)
-            for lvl in range(self.num_levels):
-                prob_vector[lvl] = ((self.alpha + level_counts[lvl]) *
-                                    (self.eta + path_refs[lvl].word_freqs[w_id]) /
-                                    (self.eta_sum + path_refs[lvl].word_total))
+            z_doc[i] = new_lv
+            level_counts[new_lv] += 1
+            path_arr[new_lv].n_w[w_id] += 1
+            path_arr[new_lv].n_sum += 1
 
-            prob_vector /= np.sum(prob_vector)
-            new_level = self.rng.multinomial(1, prob_vector).argmax()
-
-            # Update with new assignment
-            doc_assignments[i] = new_level
-            level_counts[new_level] += 1
-            path_refs[new_level].word_freqs[w_id] += 1
-            path_refs[new_level].word_total += 1
-            
-#########################################################################
-# Utility functions
-#########################################################################
-
-    def exhibit_nodes(self, n_top_terms, show_weights):
-        self._display_node(self.root, 0, n_top_terms, show_weights)
-
-    def _display_node(self, node, indent, n_top_terms, show_weights):
-        prefix = '    ' * indent
-        node_info = (f'{prefix}topic={node.node_index} level={node.level_id} '
-                     f'(docs={node.num_customers}): ')
-        node_info += node.top_n_words(n_top_terms, show_weights)
-        print(node_info)
-        for ch in node.child_nodes:
-            self._display_node(ch, indent + 1, n_top_terms, show_weights)
-    
-    def get_path_from_leaf(self, leaf_node):
+    ##########################################################################
+    # Helper / Display
+    ##########################################################################
+    def exhibit_topics(self, top_n=5, show_counts=True, structure=False):
         """
-        Traverse from leaf_node up to the root, returning a list of nodes 
-        in root->leaf order.
-        Returns
-        -------
-        path_nodes: list of HLDA_Node from root -> leaf
+        If structure=False:
+            Print out the topics from the root downward with top words.
+        If structure=True:
+            Print out just the structure:
+            Node X (level=Y, children=Z)
         """
-        path = []
+        self._display_subtree(self.root, indent=0, top_n=top_n,
+                            show_counts=show_counts, structure=structure)
 
-        # Climb up the chain
+    def _display_subtree(self, node, indent, top_n, show_counts, structure):
+        if structure:
+            # Show only structural info
+            prefix = "  " * indent
+            print(f"{prefix}Topic Node {node.node_index} "
+                f"(level={node.level_id}, children={len(node.children)})")
+        else:
+            # Show topic info + top words
+            prefix = "    " * indent
+            desc = node.top_words(n_terms=top_n, show_counts=show_counts)
+            print(f"{prefix}Topic Node {node.node_index} (level={node.level_id}, docs={node.num_docs}): {desc}")
+
+        # Recurse for children
+        for child in node.children:
+            self._display_subtree(child, indent+1, top_n, show_counts, structure)
+                
+    def traverse_tree(self, node=None):
+        """
+        A depth-first traversal (DFS) generator that yields
+        each node in the hierarchy (root -> all descendants).
+        
+        Parameters
+        ----------
+        node : NCRPNode or None
+            If None, we start from self.root. Otherwise, we start from the specified node.
+        
+        Yields
+        ------
+        NCRPNode
+            Each node in the DFS.
+        """
+        if node is None:
+            node = self.root
+
+        yield node
+        for child in node.children:
+            yield from self.traverse_tree(child)
+
+    ## Retriving path information
+    def get_path(self, leaf_node):
+        """
+        Return the list of nodes from root->leaf for the given leaf_node.
+        """
+        path_nodes = []
         cursor = leaf_node
         while cursor is not None:
-            path.append(cursor)
-            cursor = cursor.parent_node
+            path_nodes.append(cursor)
+            cursor = cursor.parent
+        path_nodes.reverse()
+        return path_nodes
 
-        # Returning the path from root to leaf
-        path.reverse()
-        return path
-    
-    def get_path_info_from_leaf(self, leaf_node):
+    def get_path_info(self, leaf_node):
         """
-        Get the path information as a list of tuples (node_index, level_id).
+        Return (node_index, level_id) for each node from root->leaf.
+        """
+        nodes = self.get_path(leaf_node)
+        return [(n.node_index, n.level_id) for n in nodes]
+    
+    ## Hyperparameter testing result analysis
+    def gamma_eval(self, levels=None):
+        """
+        Evaluate the effect of gamma by counting how many 'tables' (nodes)
+        exist at each level in the nCRP tree.
+
+        Parameters
+        ----------
+        levels : int or None
+            If given, only compute for levels [0..levels-1].
+            If None, use self.L (all levels).
+
+        Returns
+        -------
+        list of int
+            counts[i] = number of nodes at level i
+        """
+        if levels is None or levels > self.L:
+            levels = self.L
+
+        level_counts = [0] * levels
+
+        for node in self.traverse_tree():
+            if node.level_id < levels:
+                level_counts[node.level_id] += 1
+
+        return level_counts
+
+    
+    
+    def alpha_eval(self, document_id):
+        """
+        Evaluate the effect of alpha by looking at how tokens in a given document
+        are allocated across the L levels on its path.
+
+        Parameters
+        ----------
+        document_id : int
+            ID of the document to analyze.
+
+        Returns
+        -------
+        list of float
+            fractions[i] = fraction of doc's tokens assigned to level i.
+                        Summation over i is 1.0.
+        """
+        # Check
+        if document_id < 0 or document_id >= self.num_docs:
+            raise ValueError(f"document_id must be in [0, {self.num_docs-1}]")
+
+        doc_levels = self.z_tokens[document_id]  # array of level assignments
+        doc_length = len(doc_levels)
+        if doc_length == 0:
+            return [0.0] * self.L  # edge case: empty doc
+
+        level_counts = np.bincount(doc_levels, minlength=self.L)  # shape=(L,)
+        fractions = level_counts / float(doc_length)
+
+        return fractions.tolist()
+
+
+    def eta_eval(self, n=5):
+        """
+        Evaluate the effect of eta by calculating, level by level,
+        the average fraction of each topic's total word count
+        that is contributed by its top-n words.
+
+        For each level `lvl` in [0..L-1]:
+        1. Find all nodes at that level.
+        2. For each node, compute coverage = sum of counts in top-n words / node.n_sum
+        3. Take the average coverage over all nodes at this level.
+
+        Parameters
+        ----------
+        n : int
+            The number of top words to consider.
+
+        Returns
+        -------
+        list of float
+            coverage_per_level[lvl] = average coverage of top-n words
+                                    among all topics at level `lvl`.
+                                    If there are no topics at that level,
+                                    the coverage is reported as 0.
+        """
+        level_coverages = [[] for _ in range(self.L)]
         
+        for node in self.traverse_tree():
+            if node.n_sum > 0:
+                # Sort node.n_w to find top-n counts
+                order = np.argsort(node.n_w)[::-1]
+                top_n_ids = order[:n]
+                coverage = node.n_w[top_n_ids].sum() / node.n_sum
+            else:
+                coverage = 0.0
+            level_coverages[node.level_id].append(coverage)
+
+        coverage_per_level = []
+        for lvl in range(self.L):
+            vals = level_coverages[lvl]
+            coverage_per_level.append(np.mean(vals) if vals else 0.0)
+
+        return coverage_per_level
+
+    def generate_synthetic_corpus(self, num_docs, words_per_doc, alpha_dir, rng=None):
+        """
+        Generates a synthetic corpus using the learned hLDA tree structure using the hlda generative process.
+
         Parameters
         ----------
-        leaf_node : HLDA_Node
-            The leaf node from which to extract the path.
-
+        num_docs : int
+            Number of documents to generate.
+        words_per_doc : int
+            Number of words per document.
+        alpha_dir : float
+            Concentration parameter for the Dirichlet distribution over topic proportions.
+        rng : np.random.RandomState, optional
+            Random number generator for reproducibility.
         Returns
         -------
-        path_info : list of tuples
-            Each tuple contains (node_index, level_id) from root to leaf.
+        synthetic_corpus : list of lists
+            Synthetic corpus where each document is a list of word IDs.
         """
-        path_nodes = self.get_path_from_leaf(leaf_node)
-        return [(node.node_index, node.level_id) for node in path_nodes]
-    
-    def get_number_of_topics(self):
-        return HLDA_Node.__class__.total_created_nodes
-    
-    def compare_with_original(self, original_doc_paths):
-        """
-        Utility function to compare the reconstructed tree
+        # 1) Collect unique leaves from doc_leaf
+        leaf_nodes = set(self.doc_leaf.values())
+        leaf_nodes = list(leaf_nodes)
+        if not leaf_nodes:
+            raise ValueError("No leaf nodes (leaf_nodes) found in the tree.")
 
-        Parameters
-        ----------
-        original_doc_paths : list of list of tuples
-            original_doc_paths[i] is the list of (node_index, level_id) 
-            used to generate the synthetic_corpus[i].
+        if rng is None:
+            rng = self.rng
 
-        Returns
-        -------
-        accuracy : float
-            The fraction of documents where the recovered path matches the original path.
-        """
-        correct = 0
-        total = len(original_doc_paths)
+        synthetic_corpus = []
+        V = len(self.vocab) 
 
-        for doc_idx, original_path in enumerate(original_doc_paths):
-            recovered_leaf = self.doc_to_leaf.get(doc_idx, None)
-            if recovered_leaf is None:
-                continue
-            recovered_path = self.get_path_info_from_leaf(recovered_leaf)
+        for _ in range(num_docs):
+            # 2) Sample a random leaf node (uniform)
+            leaf = rng.choice(leaf_nodes)
+            # Get the path from root->leaf (length = self.L)
+            path_nodes = self.get_path(leaf)
 
-            # Compare each level in the path
-            match = True
-            for orig, recov in zip(original_path, recovered_path):
-                orig_node_idx, orig_level = orig
-                recov_node_idx, recov_level = recov
-                if orig_node_idx != recov_node_idx or orig_level != recov_level:
-                    match = False
-                    break
+            # 3) Sample a Dirichlet distribution over these L nodes
+            theta = rng.dirichlet([alpha_dir] * self.L)
 
-            if match:
-                correct += 1
+            # 4) Generate a new document
+            doc = []
+            for _w in range(words_per_doc):
+                z = rng.choice(self.L, p=theta)
+                node = path_nodes[z]
 
-        accuracy = correct / total if total > 0 else 0.0
-        print(f"Accuracy of recovered paths: {accuracy*100:.2f}%")
-        return accuracy
+                numerator = node.n_w + self.eta
+                denominator = node.n_sum + self.eta_sum
+                if denominator < 1e-12:
+                    probs = np.ones(V) / V
+                else:
+                    probs = numerator / denominator
+
+                # sample a word
+                word = rng.choice(V, p=probs)
+                doc.append(word)
+
+            synthetic_corpus.append(doc)
+        return synthetic_corpus
