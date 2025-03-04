@@ -1,7 +1,12 @@
 import numpy as np
 import time
+import matplotlib.pyplot as plt
+import io
+from PIL import Image
 from math import log
 from numpy.random import RandomState
+from graphviz import Digraph
+
 
 class NCRPNode:
     """
@@ -676,3 +681,33 @@ class hLDA:
 
             synthetic_corpus.append(doc)
         return synthetic_corpus
+    
+    def visualise_tree(self, show_level_info=False):
+        """
+        Visualize the hLDA tree using Graphviz and display it using matplotlib.
+        
+        Parameters
+        ----------
+        show_level_info : bool
+            If True, include the node's level info in the label.
+        """
+        dot = Digraph(comment="hLDA Tree", format="png")
+
+        def traverse(node):
+            # Create a label with minimal info (node index, optionally level)
+            label = f"{node.node_index}" if not show_level_info else f"{node.node_index}\nL{node.level_id}"
+            dot.node(str(node.node_index), label)
+            for child in node.children:
+                dot.edge(str(node.node_index), str(child.node_index))
+                traverse(child)
+
+        traverse(self.root)
+        
+        # Render the diagram to PNG and display using matplotlib
+        png_bytes = dot.pipe(format='png')
+        image_stream = io.BytesIO(png_bytes)
+        image = Image.open(image_stream)
+        plt.figure(figsize=(12, 8))
+        plt.imshow(image)
+        plt.axis('off')
+        plt.show()

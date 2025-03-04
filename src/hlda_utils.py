@@ -117,3 +117,70 @@ def summarise(df, hlda_model, model_name, aim, documents, time):
     df = pd.concat([df, pd.DataFrame([data])], ignore_index=True)
     return df
 
+
+def jensen_shannon_divergence(model1, topic_index1, model2, topic_index2, eps=1e-12):
+    """
+    Calculate the Jensen-Shannon divergence between two topic distributions,
+    one from each model. The topic distributions are obtained from the word 
+    count vector (n_w) of each node (topic) and normalized to form a probability 
+    distribution.
+    
+    Parameters
+    ----------
+    model1 : hLDA
+        The first hLDA model.
+    topic_index1 : int
+        The topic number (node index) to compare from model1.
+    model2 : hLDA
+        The second hLDA model.
+    topic_index2 : int
+        The topic number (node index) to compare from model2.
+    eps : float, optional
+        A small constant added to denominators to avoid division by zero.
+    
+    Returns
+    -------
+    float
+        The Jensen-Shannon divergence between the two topic distributions.
+    """
+    
+    def get_node_by_index(model, topic_index):
+        for node in model.traverse_tree():
+            if node.node_index == topic_index:
+                return node
+        return None
+    
+    node1 = get_node_by_index(model1, topic_index1)
+    node2 = get_node_by_index(model2, topic_index2)
+    
+    if node1 is None:
+        raise ValueError(f"Topic {topic_index1} not found in model1.")
+    if node2 is None:
+        raise ValueError(f"Topic {topic_index2} not found in model2.")
+    
+    # Convert raw counts to probability distributions.
+    p1 = node1.n_w.astype(np.float64)
+    p2 = node2.n_w.astype(np.float64)
+    
+    # Normalize counts to probabilities; if total count is 0, use a uniform distribution.
+    if node1.n_sum > 0:
+        p1 /= node1.n_sum
+    else:
+        p1 = np.ones_like(p1) / len(p1)
+        
+    if node2.n_sum > 0:
+        p2 /= node2.n_sum
+    else:
+        p2 = np.ones_like(p2) / len(p2)
+        
+    # Compute the average distribution.
+    m = 0.5 * (p1 + p2)
+    
+    # Safe KL divergence: only consider indices where the first distribution is nonzero,
+    # and add a small epsilon to avoid log(0) and division-by-zero.
+    def kl_divergence(a, b):
+        mask = a > 0
+        return np.sum(a[mask] * np.log(a[mask] / (b[mask] + eps)))
+    
+    jsd = 0.5 * kl_divergence(p1, m) + 0.5 * kl_divergence(p2, m)
+    return jsd
